@@ -9,6 +9,18 @@ import hashlib
 import time
 import pickle
 from pathlib import Path
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('chainlit_demo.log')
+    ]
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -31,12 +43,12 @@ def load_cache_from_file() -> Dict:
         if CACHE_FILE.exists():
             with open(CACHE_FILE, 'rb') as f:
                 cache_data = pickle.load(f)
-                print(f"Loaded cache with {len(cache_data)} entries from file")
+                logger.info(f"Loaded cache with {len(cache_data)} entries from file")
                 return cache_data
     except Exception as e:
-        print(f"Error loading cache from file: {e}")
+        logger.error(f"Error loading cache from file: {e}")
     
-    print("Starting with empty cache")
+    logger.info("Starting with empty cache")
     return {}
 
 def save_cache_to_file(cache_data: Dict):
@@ -44,11 +56,11 @@ def save_cache_to_file(cache_data: Dict):
     try:
         with open(CACHE_FILE, 'wb') as f:
             pickle.dump(cache_data, f)
-        print(f"Saved cache with {len(cache_data)} entries to file")
+        logger.info(f"Saved cache with {len(cache_data)} entries to file")
         with open("test_reponse.json", "w") as test_file:
             json.dump(cache_data, test_file, indent=2)
     except Exception as e:
-        print(f"Error saving cache to file: {e}")
+        logger.error(f"Error saving cache to file: {e}")
 
 def cleanup_expired_cache(cache_data: Dict) -> Dict:
     """Remove expired entries from cache"""
@@ -63,7 +75,7 @@ def cleanup_expired_cache(cache_data: Dict) -> Dict:
             expired_count += 1
     
     if expired_count > 0:
-        print(f"Cleaned {expired_count} expired cache entries")
+        logger.info(f"Cleaned {expired_count} expired cache entries")
         save_cache_to_file(cleaned_cache)
     
     return cleaned_cache
@@ -90,13 +102,13 @@ def get_cached_response(cache_key: str) -> Optional[Dict]:
     if cache_key in api_cache:
         cached_data = api_cache[cache_key]
         if time.time() - cached_data["timestamp"] < CACHE_DURATION:
-            print(f"Cache HIT for key: {cache_key[:8]}...")
+            logger.info(f"Cache HIT for key: {cache_key[:8]}...")
             return cached_data["response"]
         else:
             # Remove expired cache entry
             del api_cache[cache_key]
             save_cache_to_file(api_cache)
-            print(f"Cache EXPIRED for key: {cache_key[:8]}...")
+            logger.info(f"Cache EXPIRED for key: {cache_key[:8]}...")
     return None
 
 def set_cached_response(cache_key: str, response: Dict):
@@ -110,7 +122,7 @@ def set_cached_response(cache_key: str, response: Dict):
     
     # Save to file after adding new entry
     save_cache_to_file(api_cache)
-    print(f"Cache SET for key: {cache_key[:8]}...")
+    logger.info(f"Cache SET for key: {cache_key[:8]}...")
 
 class ConversationalChatClient:
     def __init__(self, api_base_url: str):
@@ -131,8 +143,8 @@ class ConversationalChatClient:
                 'Content-Type': 'application/json'
             }
             
-            print(f"Making request to: {self.chat_endpoint}")
-            print(f"Payload: {json.dumps(payload, indent=2)}")
+            logger.info(f"Making request to: {self.chat_endpoint}")
+            logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
             
             # Check cache first
             cache_key = get_cache_key(messages, session_id, model)
@@ -147,8 +159,8 @@ class ConversationalChatClient:
                 timeout=30
             )
             
-            print(f"response: {response.json()}")
-            print(f"Response status: {response.status_code}")
+            logger.debug(f"response: {response.json()}")
+            logger.info(f"Response status: {response.status_code}")
             
             if response.status_code == 200:
                 # Cache the response
@@ -396,8 +408,8 @@ async def on_select_model(action: cl.Action):
     """Handle model selection"""
     try:
         # Debug: Print action attributes
-        print(f"Action attributes: {dir(action)}")
-        print(f"Action payload: {action.payload}")
+        logger.debug(f"Action attributes: {dir(action)}")
+        logger.info(f"Action payload: {action.payload}")
         
         # Get model info from payload
         model_info = action.payload
@@ -417,7 +429,7 @@ async def on_select_model(action: cl.Action):
         ).send()
         
     except Exception as e:
-        print(f"Error in model selection: {str(e)}")
+        logger.error(f"Error in model selection: {str(e)}")
         await cl.Message(
             content=f"❌ **Error selecting model:** {str(e)}"
         ).send()
@@ -425,7 +437,7 @@ async def on_select_model(action: cl.Action):
 async def display_results_sidebar(results_list: List[Dict], total_count: int):
     """Display search results table in the sidebar"""
     try:
-        print(f"display_results_sidebar called: results={len(results_list)}, total_count={total_count}")
+        logger.info(f"display_results_sidebar called: results={len(results_list)}, total_count={total_count}")
         
         # Store results in session for export
         cl.user_session.set("search_results", results_list)
@@ -525,7 +537,7 @@ async def display_results_sidebar(results_list: List[Dict], total_count: int):
         import time
         unique_id = str(int(time.time()))
         
-        print(f"Updating sidebar with {len(results_list)} results, unique_id: {unique_id}")
+        logger.info(f"Updating sidebar with {len(results_list)} results, unique_id: {unique_id}")
         
         elements = [
             cl.Text(
@@ -537,11 +549,11 @@ async def display_results_sidebar(results_list: List[Dict], total_count: int):
         # Clear sidebar first, then set new elements to force update
         try:
             await cl.ElementSidebar.set_elements([])
-            print("Sidebar cleared")
+            logger.info("Sidebar cleared")
             await cl.ElementSidebar.set_elements(elements)
-            print(f"Sidebar updated with new table (id: {unique_id})")
+            logger.info(f"Sidebar updated with new table (id: {unique_id})")
         except Exception as e:
-            print(f"Error updating sidebar: {e}")
+            logger.error(f"Error updating sidebar: {e}")
         
         # Send export buttons as a pinned message at the top
         export_msg = await cl.Message(
@@ -569,7 +581,7 @@ async def display_results_sidebar(results_list: List[Dict], total_count: int):
             cl.user_session.set("export_message_id", export_msg.id)
         
     except Exception as e:
-        print(f"Error displaying sidebar table: {str(e)}")
+        logger.error(f"Error displaying sidebar table: {str(e)}")
         await cl.Message(
             content=f"❌ **Error displaying sidebar table:** {str(e)}"
         ).send()
@@ -586,7 +598,7 @@ async def on_export_csv(action: cl.Action):
         results_list = cl.user_session.get("search_results", [])
         total_count = cl.user_session.get("results_total_count", 0)
         
-        print(f"CSV Export: Found {len(results_list)} results in session, total_count={total_count}")
+        logger.info(f"CSV Export: Found {len(results_list)} results in session, total_count={total_count}")
         
         if not results_list:
             await cl.Message(content="❌ **Error:** No search results to export.").send()
@@ -600,7 +612,7 @@ async def on_export_csv(action: cl.Action):
         for result in results_list:
             all_fields.update(result.keys())
         
-        print(f"CSV Export: Found {len(all_fields)} unique fields")
+        logger.info(f"CSV Export: Found {len(all_fields)} unique fields")
         
         # Sort fields for consistent column order
         field_priority = {
@@ -631,7 +643,7 @@ async def on_export_csv(action: cl.Action):
         csv_content = output.getvalue()
         output.close()
         
-        print(f"CSV Export: Generated CSV with {len(csv_content)} characters")
+        logger.info(f"CSV Export: Generated CSV with {len(csv_content)} characters")
         
         # Create downloadable file
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -654,7 +666,7 @@ async def on_export_csv(action: cl.Action):
         ).send()
         
     except Exception as e:
-        print(f"Error in CSV export: {str(e)}")
+        logger.error(f"Error in CSV export: {str(e)}")
         await cl.Message(content=f"❌ **Error exporting CSV:** {str(e)}").send()
 
 @cl.action_callback("export_json")
