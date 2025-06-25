@@ -431,6 +431,10 @@ async def display_results_sidebar(results_list: List[Dict], total_count: int):
         cl.user_session.set("search_results", results_list)
         cl.user_session.set("results_total_count", total_count)
         
+        # Force a small delay to ensure proper sidebar clearing
+        import asyncio
+        await asyncio.sleep(0.1)
+        
         # Create the table
         table_content = f"## 📊 Search Results\n"
         table_content += f"**Total Results:** {total_count} | **Showing:** {len(results_list)} results\n\n"
@@ -517,16 +521,27 @@ async def display_results_sidebar(results_list: List[Dict], total_count: int):
                 table_row = "| " + " | ".join(row_data) + " |"
                 table_content += table_row + "\n"
         
-        # Create sidebar elements with just the table
+        # Create sidebar elements with just the table - use unique name to force update
+        import time
+        unique_id = str(int(time.time()))
+        
+        print(f"Updating sidebar with {len(results_list)} results, unique_id: {unique_id}")
+        
         elements = [
             cl.Text(
-                name="search_results_table",
+                name=f"search_results_table_{unique_id}",
                 content=table_content
             )
         ]
         
-        # Set sidebar elements
-        await cl.ElementSidebar.set_elements(elements)
+        # Clear sidebar first, then set new elements to force update
+        try:
+            await cl.ElementSidebar.set_elements([])
+            print("Sidebar cleared")
+            await cl.ElementSidebar.set_elements(elements)
+            print(f"Sidebar updated with new table (id: {unique_id})")
+        except Exception as e:
+            print(f"Error updating sidebar: {e}")
         
         # Send export buttons as a pinned message at the top
         export_msg = await cl.Message(
@@ -812,6 +827,11 @@ async def process_conversation_message(user_input: str):
                 
                 # Display search results in sidebar only
                 if results_list:
+                    # Clear previous search results from session to ensure fresh state
+                    cl.user_session.set("search_results", [])
+                    cl.user_session.set("results_total_count", 0)
+                    
+                    print(f"New search results: {len(results_list)} results, clearing sidebar for fresh update")
                     await display_results_sidebar(results_list, results_count)
 
             if response.get("session_summary"):
